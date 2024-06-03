@@ -4,18 +4,18 @@
 
 module GPR_FILE
 (
-    input wire clk;
-    input wire we;
+    input wire clk,
+    input wire we,
 
     // Read 2 GPRs at once
-    input wire [`GPR_ID_BITS - 1 : 0] read1_id;
-    input wire [`GPR_ID_BITS - 1 : 0] read2_id;
-    output reg [`GPR_BITS - 1 : 0] read1_val;
-    output reg [`GPR_BITS - 1 : 0] read2_val;
+    input wire [`GPR_ID_BITS - 1 : 0] read1_id,
+    input wire [`GPR_ID_BITS - 1 : 0] read2_id,
+    output reg [`GPR_BITS - 1 : 0] read1_val,
+    output reg [`GPR_BITS - 1 : 0] read2_val,
 
     // Write one GPR at once
-    input wire [`GPR_ID_BITS - 1 : 0] write_id;
-    output reg [`GPR_BITS - 1 : 0] write_val;
+    input wire [`GPR_ID_BITS - 1 : 0] write_id,
+    output reg [`GPR_BITS - 1 : 0] write_val
 );
 
     reg [`GPR_BITS - 1 : 0] gprs [`GPR_NUM - 1 : 0];
