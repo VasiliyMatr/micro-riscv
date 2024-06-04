@@ -1,4 +1,4 @@
-// Defines memory module
+// Defines data memory module
 
 `include "defines.sv"
 
@@ -99,7 +99,7 @@ module DATA_MEMORY
     integer i;
     initial begin
         for (i = 0; i != NUM_BYTES; i = i + 1) begin
-            memory[i] <= 8'hFF;
+            memory[i] <= 8'h00;
         end
     end
 
