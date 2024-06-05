@@ -1,6 +1,13 @@
 // Defines MICRO CPU hart
 
 `include "defines.sv"
+`include "alu.sv"
+`include "decoder.sv"
+`include "dmem.sv"
+`include "gpr_file.sv"
+`include "hazard_unit.sv"
+`include "imem.sv"
+`include "pc_wb.sv"
 
 module HART
 (
@@ -9,17 +16,19 @@ module HART
 );
 
 // fetched instr code
-wire [`DWORD_BITS - 1 : 0] instr_fetch;
-reg  [`DWORD_BITS - 1 : 0] instr_dec;
+wire [`WORD_BITS - 1 : 0] instr_fetch;
+reg  [`WORD_BITS - 1 : 0] instr_dec;
 
 /// rs1, rs2, rd
 
-reg [4 : 0] rs1_dec, rs1_exe, rs2_dec, rs2_exe;
+wire [`GPR_ID_BITS - 1 : 0] rs1_dec, rs2_dec;
+reg  [`GPR_ID_BITS - 1 : 0] rs1_exe, rs2_exe;
 
 wire [`DWORD_BITS - 1 : 0] rs1_dec_val, rs2_dec_val;
 reg  [`DWORD_BITS - 1 : 0] rs1_exe_val, rs2_exe_val;
 
-reg [4 : 0] rd_dec, rd_exe, rd_mem, rd_wd;
+wire [`GPR_ID_BITS - 1 : 0] rd_dec;
+reg  [`GPR_ID_BITS - 1 : 0] rd_exe, rd_mem, rd_wb;
 
 /// Alu ins
 
@@ -37,28 +46,34 @@ reg  [`WORD_BITS - 1 : 0] imm_exe;
 
 /// Alu outs
 
-wire [`DWORD_BITS - 1 : 0] alu_out_exe, alu_out_mem, alu_out_wb;
+wire [`DWORD_BITS - 1 : 0] alu_out_exe;
+reg  [`DWORD_BITS - 1 : 0] alu_out_mem, alu_out_wb;
 wire alu_zero_flag;
 
 /// invalid/exception flags
 
-reg invalid_dec = 0, invalid_exe = 0, invalid_mem = 0, invalid_wb = 0;
-reg exception_dec = 0, exception_exe = 0, exception_mem = 0, exception_wb = 0;
+wire invalid_dec = 0;
+reg  invalid_exe = 0, invalid_mem = 0, invalid_wb = 0;
+wire exception_dec = 0;
+reg  exception_exe = 0, exception_mem = 0, exception_wb = 0;
 
 /// Memory fields
 wire [`FUNCT3_BITS - 1 : 0] funct3_dec;
 reg  [`FUNCT3_BITS - 1 : 0] funct3_exe, funct3_mem;
 
-/// Branch inv flag
+/// Branch flags
+wire branch_dec;
+reg  branch_exe;
+
 wire branch_inv_cond_dec;
 reg  branch_inv_cond_exe;
 
 /// Hazard unit flags
 wire mem_read_dec;
-reg  mem_read_exe, mem_read_mem;
+reg  mem_read_exe, mem_read_mem, mem_read_wb;
 
 wire mem_write_dec;
-reg  mem_write_exe, mem_write_mem;
+reg  mem_write_exe, mem_write_mem, mem_write_wb;
 
 wire reg_write_dec;
 reg  reg_write_exe, reg_write_mem, reg_write_wb;
@@ -66,11 +81,12 @@ reg  reg_write_exe, reg_write_mem, reg_write_wb;
 wire jump_dec;
 reg  jump_exe;
 
-wire flush_exe, stall_fetch, stall_decode;
+wire flush_exe, stall_fetch, stall_dec;
 
 wire took_branch_exe;
 
-reg [`DWORD_BITS - 1 : 0] res_wb;
+// Result to wb to GPRs
+wire [`DWORD_BITS - 1 : 0] res_wb;
 
 /// Stages enable flags
 wire en_pc_wb, en_dec, en_exe, en_mem, en_wb;
@@ -96,8 +112,8 @@ assign en_pc_wb = !stall_fetch && !exception_wb;
 
 /// Pc update fields
 
-wire [1 : 0] pc_mode_dec;
-reg  [1 : 0] pc_mode_exe, next_pc_mode;
+wire [1 : 0] pc_mode_dec, next_pc_mode;
+reg  [1 : 0] pc_mode_exe;
 
 wire [`DWORD_BITS - 1 : 0] pc_fetch;
 reg  [`DWORD_BITS - 1 : 0] pc_dec, pc_exe;
@@ -106,7 +122,7 @@ assign next_pc_mode = took_branch_exe ? pc_mode_exe : `PC_4;
 
 /// Fetch stage
 
-INSTR_MEMORY imem(.clk(clk), .pc(pc_fetch), .instr(instr_fetch));
+INSTR_MEMORY imem(.pc(pc_fetch), .instr(instr_fetch));
 
 PC_WB pc_wb(
     .clk(clk),
@@ -114,16 +130,16 @@ PC_WB pc_wb(
     .pc_mode(next_pc_mode),
     .pc_new(pc_exe),
     .imm(imm_exe),
-    .reg_val(rs1_fwd_val),
-    .pc_fetch(pc_fetch)
+    .reg_val(fwd_rs1_val),
+    .pc(pc_fetch)
 );
 
 /// Fetch -> Decode
 
 always_ff @(posedge clk) begin
     if (reset_dec) begin
-        pc_dec <= 0;
-        instr_dec <= 0;
+        pc_dec      <= 0;
+        instr_dec   <= 0;
     end
     else if (en_dec) begin
         pc_dec <= pc_fetch;
@@ -164,7 +180,7 @@ GPR_FILE gpr_file(
     .read1_val(rs1_dec_val),
     .read2_val(rs2_dec_val),
 
-    .write_id(rd_dec),
+    .write_id(rd_wb),
     .write_val(res_wb)
 );
 
@@ -172,6 +188,28 @@ GPR_FILE gpr_file(
 
 always_ff @(posedge clk) begin
     if (reset_exe) begin
+        pc_exe              <= 0;
+        rs1_exe             <= 0;
+        rs1_exe_val         <= 0;
+        rs2_exe             <= 0;
+        rs2_exe_val         <= 0;
+        rd_exe              <= 0;
+        imm_exe             <= 0;
+        alu_op_exe          <= 0;
+        funct3_exe          <= 0;
+        mem_read_exe        <= 0;
+        mem_write_exe       <= 0;
+        reg_write_exe       <= 0;
+        alu_src1_exe        <= 0;
+        alu_src2_exe        <= 0;
+        pc_mode_exe         <= 0;
+        branch_exe          <= 0;
+        branch_inv_cond_exe <= 0;
+        jump_exe            <= 0;
+        exception_exe       <= 0;
+        invalid_exe         <= 0;
+    end
+    else if (en_exe) begin
         pc_exe <= pc_dec;
 
         rs1_exe <= rs1_dec;
@@ -189,7 +227,7 @@ always_ff @(posedge clk) begin
         mem_write_exe <= mem_write_dec;
         reg_write_exe <= reg_write_dec;
         alu_src1_exe <= alu_src1_dec;
-        alu_src1_exe <= alu_src2_dec;
+        alu_src2_exe <= alu_src2_dec;
         pc_mode_exe <= pc_mode_dec;
         branch_exe <= branch_dec;
         branch_inv_cond_exe <= branch_inv_cond_dec;
@@ -197,52 +235,30 @@ always_ff @(posedge clk) begin
         exception_exe <= exception_dec;
         invalid_exe <= invalid_dec;
     end
-    else if (en_exe) begin
-        pc_exe              <= 0;
-        rs1_exe             <= 0;
-        rs1_exe_val         <= 0;
-        rs2_exe             <= 0;
-        rs2_exe_val         <= 0;
-        rd_exe              <= 0;
-        imm_exe             <= 0;
-        alu_op_exe          <= 0;
-        funct3_exe          <= 0;
-        mem_read_exe        <= 0;
-        mem_write_exe       <= 0;
-        reg_write_exe       <= 0;
-        alu_src1_exe        <= 0;
-        alu_src1_exe        <= 0;
-        pc_mode_exe         <= 0;
-        branch_exe          <= 0;
-        branch_inv_cond_exe <= 0;
-        jump_exe            <= 0;
-        exception_exe       <= 0;
-        invalid_exe         <= 0;
-    end
 end
 
 /// Execute stage
 
-wire [1 : 0] rs1_fwd_exe, rs2_fwd_exe;
-wire [`DWORD_BITS - 1 : 0] rs1_fwd_val, rs2_fwd_val, alu_src1_exe_val, alu_src2_exe_val;
+wire [1 : 0] fwd_rs1_exe, fwd_rs2_exe;
+wire [`DWORD_BITS - 1 : 0] fwd_rs1_val, fwd_rs2_val, alu_src1_exe_val, alu_src2_exe_val;
 
-assign rs1_fwd_val =
-    rs1_fwd_exe[1] == 1 ? alu_out_mem :
-    rs1_fwd_exe[0] == 1 ? res_wb :
+assign fwd_rs1_val =
+    fwd_rs1_exe[1] == 1 ? alu_out_mem :
+    fwd_rs1_exe[0] == 1 ? res_wb :
     rs1_exe_val;
 
-assign rs2_fwd_val =
-    rs2_fwd_exe[1] == 1 ? alu_out_mem :
-    rs2_fwd_exe[0] == 1 ? res_wb :
+assign fwd_rs2_val =
+    fwd_rs2_exe[1] == 1 ? alu_out_mem :
+    fwd_rs2_exe[0] == 1 ? res_wb :
     rs2_exe_val;
 
-assign alu_src1_exe_val = alu_src1_exe == `ALU_SRC1_RS1 ? rs1_fwd_val : pc_exe;
+assign alu_src1_exe_val = alu_src1_exe == `ALU_SRC1_RS1 ? fwd_rs1_val : pc_exe;
 
 wire imm_exe_sign = imm_exe[`WORD_BITS - 1];
 wire [`DWORD_BITS - 1 : 0] imm_exe_ext = {{`WORD_BITS {imm_exe_sign}}, imm_exe};
 
 assign alu_src2_exe_val =
-    alu_src2_exe == `ALU_SRC2_RS2 ? rs2_fwd_val :
+    alu_src2_exe == `ALU_SRC2_RS2 ? fwd_rs2_val :
     alu_src2_exe == `ALU_SRC2_IMM ? imm_exe_ext :
     4;
 
@@ -260,19 +276,10 @@ assign took_branch_exe =
 
 /// Execute -> Memory
 
+reg [`DWORD_BITS - 1 : 0] mem_write_data;
+
 always_ff @(posedge clk) begin
     if (reset_mem) begin
-        alu_out_mem <= alu_out_exe;
-        mem_write_data <= rs2_fwd_val;
-        funct3_mem <= funct3_exe;
-        mem_read_mem <= mem_read_exe;
-        mem_write_mem <= mem_write_exe;
-        reg_write_mem <= reg_write_exe;
-        rd_mem <= rd_exe;
-        exception_mem <= exception_exe;
-        invalid_mem <= invalid_exe;
-    end
-    else if (en_mem) begin
         alu_out_mem     <= 0;
         mem_write_data  <= 0;
         funct3_mem      <= 0;
@@ -282,6 +289,17 @@ always_ff @(posedge clk) begin
         rd_mem          <= 0;
         exception_mem   <= 0;
         invalid_mem     <= 0;
+    end
+    else if (en_mem) begin
+        alu_out_mem <= alu_out_exe;
+        mem_write_data <= fwd_rs2_val;
+        funct3_mem <= funct3_exe;
+        mem_read_mem <= mem_read_exe;
+        mem_write_mem <= mem_write_exe;
+        reg_write_mem <= reg_write_exe;
+        rd_mem <= rd_exe;
+        exception_mem <= exception_exe;
+        invalid_mem <= invalid_exe;
     end
 end
 
@@ -302,19 +320,10 @@ DATA_MEMORY dmem(
 
 /// Memory -> Write-back
 
-wire [`DWORD_BITS - 1 : 0] mem_read_data_wb;
+logic [`DWORD_BITS - 1 : 0] mem_read_data_wb;
 
 always_ff @(posedge clk) begin
     if (reset_wb) begin
-        mem_read_data_wb <= mem_read_data;
-        alu_out_wb <= alu_out_mem;
-        reg_write_wb <= reg_write_mem;
-        mem_read_wb <= mem_read_mem;
-        rd_wb <= rd_mem;
-        exception_wb <= exception_mem;
-        invalid_wb <= invalid_mem;
-    end
-    else if (en_wb) begin
         mem_read_data_wb    <= 0;
         alu_out_wb          <= 0;
         reg_write_wb        <= 0;
@@ -323,14 +332,23 @@ always_ff @(posedge clk) begin
         exception_wb        <= 0;
         invalid_wb          <= 0;
     end
+    else if (en_wb) begin
+        mem_read_data_wb <= mem_read_data;
+        alu_out_wb <= alu_out_mem;
+        reg_write_wb <= reg_write_mem;
+        mem_read_wb <= mem_read_mem;
+        rd_wb <= rd_mem;
+        exception_wb <= exception_mem;
+        invalid_wb <= invalid_mem;
+    end
 end
 
 /// Write-back stage
 
-assign res_wb = mem_read_wb ? mem_read_data_wb : alu_out_wb;
+assign res_wb = mem_read_wb == 1 ? mem_read_data_wb : alu_out_wb;
 
 HAZARD_UNIT hazard_unit(
-    .reg_write_mem(reg_write_mem), .reg_write_wb(.reg_write_wb),
+    .reg_write_mem(reg_write_mem), .reg_write_wb(reg_write_wb),
     .rs1_dec(rs1_dec), .rs2_dec(rs2_dec), .rd_exe(rd_exe),
     .rs1_exe(rs1_exe), .rs2_exe(rs2_exe), .rd_mem(rd_mem), .rd_wb(rd_wb),
     .mem_read_exe(mem_read_exe), .took_branch(took_branch_exe),

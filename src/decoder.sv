@@ -22,51 +22,51 @@ module DECODER
     output wire [4 : 0] rs2,
     output wire [4 : 0] rd,
 
-    output wire [`WORD_BITS - 1 : 0] imm,
-    output wire [`ALU_OP_BITS - 1 : 0] alu_op,
-    output wire [2 : 0] funct3,
+    output logic [`WORD_BITS - 1 : 0] imm,
+    output logic [`ALU_OP_BITS - 1 : 0] alu_op,
+    output logic [2 : 0] funct3,
 
     // Flags
-    output wire mem_read, mem_write,
-    output wire invalid_bit, exception_bit,
-    output wire reg_write, jump, branch, branch_inv_cond,
+    output logic mem_read, mem_write,
+    output logic invalid_bit, exception_bit,
+    output logic reg_write, jump, branch, branch_inv_cond,
 
     // Alu src1 switch
-    output wire [`ALU_SRC1_BITS - 1 : 0] alu_src1_mode,
+    output logic [`ALU_SRC1_BITS - 1 : 0] alu_src1_mode,
 
     // Alu src2 switch
-    output wire [`ALU_SRC2_BITS - 1 : 0] alu_src2_mode,
+    output logic [`ALU_SRC2_BITS - 1 : 0] alu_src2_mode,
 
     // Pc switch
-    output wire [1 : 0] pc_mode
+    output logic [`PC_MODE_BITS - 1 : 0] pc_mode
 );
 
 wire [6 : 0] opcode = instr[6 : 0];
 
-assign rs1 = raw_instr[19 : 15];
-assign rs2 = raw_instr[24 : 20];
-assign rd = raw_instr[11 : 7];
+assign rs1 = instr[19 : 15];
+assign rs2 = instr[24 : 20];
+assign rd = instr[11 : 7];
 
-assign funct3 = raw_instr[14 : 12];
-wire [6:0] funct7 = raw_instr[31 : 25];
+assign funct3 = instr[14 : 12];
+wire [6 : 0] funct7 = instr[31 : 25];
 
 /// Prepare immediates
 
 wire [`WORD_BITS - 1 : 0] imm_i, imm_s, imm_b, imm_u, imm_j, shamt;
 
-assign imm_i = { {20 {raw_instr[31]}}, raw_instr[31 : 20] };
+assign imm_i = { {20 {instr[31]}}, instr[31 : 20] };
 
-assign imm_s = { {20 {raw_instr[31]}}, raw_instr[31 : 25], raw_instr[11 : 7] };
+assign imm_s = { {20 {instr[31]}}, instr[31 : 25], instr[11 : 7] };
 
-assign imm_b = { {20 {raw_instr[31]}}, raw_instr[7],
-    raw_instr[30 : 25], raw_instr[11 : 8], 1'b0 };
+assign imm_b = { {20 {instr[31]}}, instr[7],
+    instr[30 : 25], instr[11 : 8], 1'b0 };
 
-assign imm_u = { raw_instr[31 : 12], {12 {1'b0}} };
+assign imm_u = { instr[31 : 12], {12 {1'b0}} };
 
-assign imm_j = { {12 {raw_instr[31]}}, raw_instr[19 : 12],
-    raw_instr[20], raw_instr[30 : 21], 1'b0 };
+assign imm_j = { {12 {instr[31]}}, instr[19 : 12],
+    instr[20], instr[30 : 21], 1'b0 };
 
-assign shamt = { {27 {1'b0}}, raw_instr[24 : 20] };
+assign shamt = { {27 {1'b0}}, instr[24 : 20] };
 
 /// Choose immediate by opcode
 assign imm =
@@ -120,9 +120,7 @@ case(opcode)
     end
 
     `JAL: begin
-        alu_op = `ALU_ADD;
-        alu_src1_mode = `ALU_SRC1_PC;
-        alu_src2_mode = `ALU_SRC2_IMM;
+        alu_op = `ALU_INVALID;
 
         reg_write = 1;
 
@@ -132,8 +130,6 @@ case(opcode)
 
     `JALR: begin
         alu_op = `ALU_INVALID;
-        alu_src1_mode = `ALU_SRC1_RS1;
-        alu_src2_mode = `ALU_SRC2_IMM;
 
         reg_write = 1;
 
@@ -143,7 +139,7 @@ case(opcode)
 
     `BRANCH_OP: begin
         alu_src1_mode = `ALU_SRC1_RS1;
-        alu_src2_mode = `ALU_SRC1_RS2;
+        alu_src2_mode = `ALU_SRC2_RS2;
 
         branch = 1;
         pc_mode = `PC_IMM;

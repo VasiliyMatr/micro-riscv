@@ -43,3 +43,17 @@
 `define ALU_SRC2_PC  2'b10
 
 `define ALU_SRC2_BITS 2
+
+// Fwd switches
+`define NO_FW   2'b00
+`define FW_WB   2'b01
+`define FW_MEM  2'b10
+
+`define FW_MODE_BITS 2
+
+// Pc wb switches
+`define PC_4    2'b00
+`define PC_IMM  2'b01
+`define PC_REG  2'b10
+
+`define PC_MODE_BITS 2

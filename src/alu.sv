@@ -7,11 +7,11 @@ module ALU
     parameter OP_SIZE = `DWORD_BITS
 )
 (
-    input wire [OP_SIZE - 1 : 0] in1, in2;
-    input wire [`ALU_OP_BITS - 1 : 0] alu_op;
+    input wire [OP_SIZE - 1 : 0] in1, in2,
+    input wire [`ALU_OP_BITS - 1 : 0] alu_op,
 
-    output wire [OP_SIZE - 1 : 0] out;
-    output wire zero_flag;
+    output logic [OP_SIZE - 1 : 0] out,
+    output logic zero_flag
 );
 
 assign zero_flag = (out === 0);

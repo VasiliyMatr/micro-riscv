@@ -8,11 +8,9 @@ module INSTR_MEMORY
     parameter WORDS_NUM = 1 << (ADDR_BITS - 2)
 )
 (
-    input wire clk,
-
     input wire [`DWORD_BITS - 1 : 0] pc,
 
-    output reg [`WORD_BITS - 1 : 0] instr
+    output wire [`WORD_BITS - 1 : 0] instr
 );
 
     reg [`WORD_BITS - 1 : 0] memory [WORDS_NUM - 1 : 0];
@@ -20,13 +18,11 @@ module INSTR_MEMORY
     // get word id
     wire [ADDR_BITS - 3 : 0] word_id = pc [ADDR_BITS - 1 : 2];
 
-    always @(posedge clk) begin
-        instr <= memory[word_id];
-    end
+    assign instr = memory[word_id];
 
     // read code from file
     initial begin
-        $readmemh ("code.txt", MEM);
+        $readmemh ("code.txt", memory);
     end
 
 endmodule

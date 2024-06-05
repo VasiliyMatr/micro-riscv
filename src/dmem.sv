@@ -20,7 +20,7 @@ module DATA_MEMORY
     input wire [`FUNCT3_BITS - 1 : 0] funct3,
 
     input wire [BUS_BITS - 1 : 0] store_data,
-    output reg [BUS_BITS - 1 : 0] load_data
+    output wire [BUS_BITS - 1 : 0] load_data
 );
 
     reg [`BYTE_BITS - 1 : 0] memory [NUM_BYTES - 1 : 0];
@@ -65,16 +65,15 @@ module DATA_MEMORY
         memory[addr + 1], memory[addr]
     };
 
-    always @(posedge clk) begin
-        /// Load
-        case (size)
-            2'b00: load_data <= lb_ext;
-            2'b01: load_data <= lh_ext;
-            2'b10: load_data <= lw_ext;
-            2'b11: load_data <= ld;
-        endcase
+    /// Load
+    assign load_data =
+        size == 2'b00 ? lb_ext :
+        size == 2'b01 ? lh_ext :
+        size == 2'b10 ? lw_ext :
+        ld;
 
-        /// Store
+    /// Store
+    always @(posedge clk) begin
         if (we) begin
             memory[addr] <= store_data[7 : 0];
 
